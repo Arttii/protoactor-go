@@ -1,14 +1,21 @@
 package remote
 
 import (
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/asynkron/protoactor-go/log"
+	remoteProto "github.com/asynkron/protoactor-go/remote/gen"
+	remoteConnect "github.com/asynkron/protoactor-go/remote/gen/genconnect"
+	"github.com/bufbuild/connect-go"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
+	"golang.org/x/net/http2"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -25,9 +32,9 @@ func endpointWriterProducer(remote *Remote, address string, config *Config) acto
 type endpointWriter struct {
 	config  *Config
 	address string
-	conn    *grpc.ClientConn
-	stream  Remoting_ReceiveClient
-	remote  *Remote
+
+	stream *connect.BidiStreamForClient[remoteProto.RemoteMessage, remoteProto.RemoteMessage]
+	remote *Remote
 }
 
 type restartAfterConnectFailure struct {
@@ -78,26 +85,45 @@ func (state *endpointWriter) initialize(ctx actor.Context) {
 }
 
 func (state *endpointWriter) initializeInternal() error {
-	conn, err := grpc.Dial(state.address, state.config.DialOptions...)
-	if err != nil {
-		return err
+
+	allowHttp := false
+	if state.config.Scheme == "http" {
+		allowHttp = true
 	}
-	state.conn = conn
-	c := NewRemotingClient(conn)
-	stream, err := c.Receive(context.Background(), state.config.CallOptions...)
-	if err != nil {
-		plog.Error("EndpointWriter failed to create receive stream", log.String("address", state.address), log.Error(err))
-		return err
+
+	client := http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP:       allowHttp,
+			TLSClientConfig: state.config.ConnectClientTLSConfig,
+
+			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+				// If you're also using this client for non-h2c traffic, you may want
+				// to delegate to tls.Dial if the network isn't TCP or the addr isn't
+				// in an allowlist.
+				return net.Dial(network, addr)
+			},
+			ReadIdleTimeout:  state.config.ConnectClientHTTPOptions.ReadIdleTimeout,
+			PingTimeout:      state.config.ConnectClientHTTPOptions.PingTimeout,
+			WriteByteTimeout: state.config.ConnectClientHTTPOptions.WriteByteTimeout,
+		},
 	}
+
+	endpoint := fmt.Sprintf("%s://%s", state.config.Scheme, state.address)
+
+	c := remoteConnect.NewRemotingClient(&client, endpoint, state.config.ConnectClientOptions...)
+	stream := c.Receive(context.Background())
+
 	state.stream = stream
 
-	err = stream.Send(&RemoteMessage{
-		MessageType: &RemoteMessage_ConnectRequest{
-			ConnectRequest: &ConnectRequest{
-				ConnectionType: &ConnectRequest_ServerConnection{
-					ServerConnection: &ServerConnection{
-						SystemId: state.remote.actorSystem.ID,
-						Address:  state.remote.actorSystem.Address(),
+	id := state.remote.actorSystem.ID
+	address := state.remote.actorSystem.Address()
+	err := stream.Send(&remoteProto.RemoteMessage{
+		MessageType: &remoteProto.RemoteMessage_ConnectRequest{
+			ConnectRequest: &remoteProto.ConnectRequest{
+				ConnectionType: &remoteProto.ConnectRequest_ServerConnection{
+					ServerConnection: &remoteProto.ServerConnection{
+						SystemId: id,
+						Address:  address,
 					},
 				},
 			},
@@ -108,14 +134,14 @@ func (state *endpointWriter) initializeInternal() error {
 		return err
 	}
 
-	connection, err := stream.Recv()
+	connection, err := stream.Receive()
 	if err != nil {
 		plog.Error("EndpointWriter failed to receive connect response", log.String("address", state.address), log.Error(err))
 		return err
 	}
 
 	switch connection.MessageType.(type) {
-	case *RemoteMessage_ConnectResponse:
+	case *remoteProto.RemoteMessage_ConnectResponse:
 		plog.Debug("Received connect response", log.String("fromAddress", state.address))
 		// TODO: handle blocked status received from remote server
 		break
@@ -126,7 +152,7 @@ func (state *endpointWriter) initializeInternal() error {
 
 	go func() {
 		for {
-			_, err := stream.Recv()
+			_, err := stream.Receive()
 			switch {
 			case errors.Is(err, io.EOF):
 				plog.Debug("EndpointWriter stream completed", log.String("address", state.address))
@@ -154,7 +180,7 @@ func (state *endpointWriter) initializeInternal() error {
 }
 
 func (state *endpointWriter) sendEnvelopes(msg []interface{}, ctx actor.Context) {
-	envelopes := make([]*MessageEnvelope, len(msg))
+	envelopes := make([]*remoteProto.MessageEnvelope, len(msg))
 
 	// type name uniqueness map name string to type index
 	typeNames := make(map[string]int32)
@@ -167,7 +193,7 @@ func (state *endpointWriter) sendEnvelopes(msg []interface{}, ctx actor.Context)
 	senderNamesArr := make([]*actor.PID, 0)
 
 	var (
-		header       *MessageHeader
+		header       *remoteProto.MessageHeader
 		typeID       int32
 		targetID     int32
 		senderID     int32
@@ -196,7 +222,7 @@ func (state *endpointWriter) sendEnvelopes(msg []interface{}, ctx actor.Context)
 		if rd.header == nil || rd.header.Length() == 0 {
 			header = nil
 		} else {
-			header = &MessageHeader{
+			header = &remoteProto.MessageHeader{
 				HeaderData: rd.header.ToMap(),
 			}
 		}
@@ -222,7 +248,7 @@ func (state *endpointWriter) sendEnvelopes(msg []interface{}, ctx actor.Context)
 			senderRequestID = rd.sender.RequestId
 		}
 
-		envelopes[i] = &MessageEnvelope{
+		envelopes[i] = &remoteProto.MessageEnvelope{
 			MessageHeader:   header,
 			MessageData:     bytes,
 			Sender:          senderID,
@@ -232,11 +258,12 @@ func (state *endpointWriter) sendEnvelopes(msg []interface{}, ctx actor.Context)
 			TargetRequestId: targetRequestID,
 			SenderRequestId: senderRequestID,
 		}
+
 	}
 
-	err := state.stream.Send(&RemoteMessage{
-		MessageType: &RemoteMessage_MessageBatch{
-			MessageBatch: &MessageBatch{
+	err := state.stream.Send(&remoteProto.RemoteMessage{
+		MessageType: &remoteProto.RemoteMessage_MessageBatch{
+			MessageBatch: &remoteProto.MessageBatch{
 				TypeNames: typeNamesArr,
 				Targets:   targetNamesArr,
 				Senders:   senderNamesArr,
@@ -322,17 +349,17 @@ func (state *endpointWriter) Receive(ctx actor.Context) {
 func (state *endpointWriter) closeClientConn() {
 	plog.Info("EndpointWriter closing client connection", log.String("address", state.address))
 	if state.stream != nil {
-		err := state.stream.CloseSend()
-		if err != nil {
-			plog.Error("EndpointWriter error when closing the stream", log.Error(err))
-		}
+		// err := state.stream.Send()
+		// if err != nil {
+		// 	plog.Error("EndpointWriter error when closing the stream", log.Error(err))
+		// }
 		state.stream = nil
 	}
-	if state.conn != nil {
-		err := state.conn.Close()
-		if err != nil {
-			plog.Error("EndpointWriter error when closing the client conn", log.Error(err))
-		}
-		state.conn = nil
-	}
+	// if state.conn != nil {
+	// 	err := state.conn.Close()
+	// 	if err != nil {
+	// 		plog.Error("EndpointWriter error when closing the client conn", log.Error(err))
+	// 	}
+	// 	state.conn = nil
+	// }
 }

@@ -45,6 +45,9 @@ func main() {
 		}
 	})
 
-	_, _ = system.Root.SpawnNamed(props, "chatserver")
+	_, err := system.Root.SpawnNamed(props, "chatserver")
+	if err != nil {
+		panic(err)
+	}
 	_, _ = console.ReadLine()
 }

@@ -75,7 +75,7 @@ func main() {
 	// runtime.GOMAXPROCS(runtime.NumCPU() * 1)
 	// runtime.GC()
 
-	messageCount := 1000000
+	messageCount := 100000
 	// remote.DefaultSerializerID = 1
 	system := actor.NewActorSystem()
 	r := remote.NewRemote(system, remote.Configure("127.0.0.1", 8081 /*, remote.WithCallOptions(grpc.UseCompressor(gzip.Name))*/))
@@ -89,7 +89,7 @@ func main() {
 			var wg sync.WaitGroup
 			props := actor.
 				PropsFromProducer(newLocalActor(&wg, messageCount),
-					actor.WithMailbox(actor.Bounded(1000000)))
+					actor.WithMailbox(actor.Bounded(100000)))
 
 			pid := rootContext.Spawn(props)
 

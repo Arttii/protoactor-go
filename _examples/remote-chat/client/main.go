@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"chat/messages"
@@ -40,7 +41,14 @@ func main() {
 	})
 
 	nick := "Roger"
+
+	rootContext.Send(server, &messages.SayRequest{
+		UserName: nick,
+		Message:  "what",
+	})
+
 	cons := console.NewConsole(func(text string) {
+		fmt.Print("running")
 		rootContext.Send(server, &messages.SayRequest{
 			UserName: nick,
 			Message:  text,

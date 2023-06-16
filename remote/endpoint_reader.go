@@ -4,11 +4,12 @@ import (
 	"errors"
 	"io"
 
-	"google.golang.org/protobuf/proto"
-
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/asynkron/protoactor-go/log"
+	remoteProto "github.com/asynkron/protoactor-go/remote/gen"
+	"github.com/bufbuild/connect-go"
 	"golang.org/x/net/context"
+	"google.golang.org/protobuf/proto"
 )
 
 type endpointReader struct {
@@ -21,11 +22,11 @@ func (s *endpointReader) mustEmbedUnimplementedRemotingServer() {
 	panic("implement me")
 }
 
-func (s *endpointReader) ListProcesses(ctx context.Context, request *ListProcessesRequest) (*ListProcessesResponse, error) {
+func (s *endpointReader) ListProcesses(ctx context.Context, request *connect.Request[remoteProto.ListProcessesRequest]) (*connect.Response[remoteProto.ListProcessesResponse], error) {
 	panic("implement me")
 }
 
-func (s *endpointReader) GetProcessDiagnostics(ctx context.Context, request *GetProcessDiagnosticsRequest) (*GetProcessDiagnosticsResponse, error) {
+func (s *endpointReader) GetProcessDiagnostics(ctx context.Context, request *connect.Request[remoteProto.GetProcessDiagnosticsRequest]) (*connect.Response[remoteProto.GetProcessDiagnosticsResponse], error) {
 	panic("implement me")
 }
 
@@ -35,7 +36,8 @@ func newEndpointReader(r *Remote) *endpointReader {
 	}
 }
 
-func (s *endpointReader) Receive(stream Remoting_ReceiveServer) error {
+func (s *endpointReader) Receive(ctx context.Context, stream *connect.BidiStream[remoteProto.RemoteMessage, remoteProto.RemoteMessage]) error {
+
 	disconnectChan := make(chan bool, 1)
 	s.remote.edpManager.endpointReaderConnections.Store(stream, disconnectChan)
 	defer func() {
@@ -47,9 +49,9 @@ func (s *endpointReader) Receive(stream Remoting_ReceiveServer) error {
 		// endpointReader sends false
 		if <-disconnectChan {
 			plog.Debug("EndpointReader is telling to remote that it's leaving")
-			err := stream.Send(&RemoteMessage{
-				MessageType: &RemoteMessage_DisconnectRequest{
-					DisconnectRequest: &DisconnectRequest{},
+			err := stream.Send(&remoteProto.RemoteMessage{
+				MessageType: &remoteProto.RemoteMessage_DisconnectRequest{
+					DisconnectRequest: &remoteProto.DisconnectRequest{},
 				},
 			})
 			if err != nil {
@@ -62,7 +64,7 @@ func (s *endpointReader) Receive(stream Remoting_ReceiveServer) error {
 	}()
 
 	for {
-		msg, err := stream.Recv()
+		msg, err := stream.Receive()
 		switch {
 		case errors.Is(err, io.EOF):
 			plog.Info("EndpointReader stream closed")
@@ -76,7 +78,7 @@ func (s *endpointReader) Receive(stream Remoting_ReceiveServer) error {
 		}
 
 		switch t := msg.MessageType.(type) {
-		case *RemoteMessage_ConnectRequest:
+		case *remoteProto.RemoteMessage_ConnectRequest:
 			plog.Debug("EndpointReader received connect request", log.Message(t.ConnectRequest))
 			c := t.ConnectRequest
 			_, err := s.OnConnectRequest(stream, c)
@@ -84,7 +86,7 @@ func (s *endpointReader) Receive(stream Remoting_ReceiveServer) error {
 				plog.Error("EndpointReader failed to handle connect request", log.Error(err))
 				return err
 			}
-		case *RemoteMessage_MessageBatch:
+		case *remoteProto.RemoteMessage_MessageBatch:
 			m := t.MessageBatch
 			err := s.onMessageBatch(m)
 			if err != nil {
@@ -98,14 +100,14 @@ func (s *endpointReader) Receive(stream Remoting_ReceiveServer) error {
 	}
 }
 
-func (s *endpointReader) OnConnectRequest(stream Remoting_ReceiveServer, c *ConnectRequest) (bool, error) {
+func (s *endpointReader) OnConnectRequest(stream *connect.BidiStream[remoteProto.RemoteMessage, remoteProto.RemoteMessage], c *remoteProto.ConnectRequest) (bool, error) {
 	switch tt := c.ConnectionType.(type) {
-	case *ConnectRequest_ServerConnection:
+	case *remoteProto.ConnectRequest_ServerConnection:
 		{
 			sc := tt.ServerConnection
 			s.onServerConnection(stream, sc)
 		}
-	case *ConnectRequest_ClientConnection:
+	case *remoteProto.ConnectRequest_ClientConnection:
 		{
 			// TODO implement me
 			plog.Error("ClientConnection not implemented")
@@ -117,7 +119,7 @@ func (s *endpointReader) OnConnectRequest(stream Remoting_ReceiveServer, c *Conn
 	return false, nil
 }
 
-func (s *endpointReader) onMessageBatch(m *MessageBatch) error {
+func (s *endpointReader) onMessageBatch(m *remoteProto.MessageBatch) error {
 	var (
 		sender *actor.PID
 		target *actor.PID
@@ -206,14 +208,14 @@ func deserializeTarget(pid *actor.PID, index int32, requestId uint32, arr []*act
 	return pid
 }
 
-func (s *endpointReader) onServerConnection(stream Remoting_ReceiveServer, sc *ServerConnection) {
+func (s *endpointReader) onServerConnection(stream *connect.BidiStream[remoteProto.RemoteMessage, remoteProto.RemoteMessage], sc *remoteProto.ServerConnection) {
 	if s.remote.BlockList().IsBlocked(sc.SystemId) {
 		plog.Debug("EndpointReader is blocked", log.String("systemId", sc.SystemId))
 
 		err := stream.Send(
-			&RemoteMessage{
-				MessageType: &RemoteMessage_ConnectResponse{
-					ConnectResponse: &ConnectResponse{
+			&remoteProto.RemoteMessage{
+				MessageType: &remoteProto.RemoteMessage_ConnectResponse{
+					ConnectResponse: &remoteProto.ConnectResponse{
 						Blocked:  true,
 						MemberId: s.remote.actorSystem.ID,
 					},
@@ -231,9 +233,9 @@ func (s *endpointReader) onServerConnection(stream Remoting_ReceiveServer, sc *S
 		_ = systemID
 	} else {
 		err := stream.Send(
-			&RemoteMessage{
-				MessageType: &RemoteMessage_ConnectResponse{
-					ConnectResponse: &ConnectResponse{
+			&remoteProto.RemoteMessage{
+				MessageType: &remoteProto.RemoteMessage_ConnectResponse{
+					ConnectResponse: &remoteProto.ConnectResponse{
 						Blocked:  false,
 						MemberId: s.remote.actorSystem.ID,
 					},

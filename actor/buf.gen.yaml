@@ -1,0 +1,14 @@
+version: v1
+managed:
+  enabled: true
+plugins:
+  - name: go
+    out: ./
+    opt: paths=source_relative
+#      b
+#     strategy: directory
+#   - name: connect-go
+#     out: go
+#     opt:
+#       - paths=source_relative
+# b

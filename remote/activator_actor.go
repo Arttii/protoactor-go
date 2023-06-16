@@ -7,6 +7,7 @@ import (
 
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/asynkron/protoactor-go/log"
+	remoteProto "github.com/asynkron/protoactor-go/remote/gen"
 )
 
 // Register a known actor props by name
@@ -50,7 +51,7 @@ func (r *Remote) ActivatorForAddress(address string) *actor.PID {
 // SpawnFuture spawns a remote actor and returns a Future that completes once the actor is started
 func (r *Remote) SpawnFuture(address, name, kind string, timeout time.Duration) *actor.Future {
 	activator := r.ActivatorForAddress(address)
-	f := r.actorSystem.Root.RequestFuture(activator, &ActorPidRequest{
+	f := r.actorSystem.Root.RequestFuture(activator, &remoteProto.ActorPidRequest{
 		Name: name,
 		Kind: kind,
 	}, timeout)
@@ -58,18 +59,18 @@ func (r *Remote) SpawnFuture(address, name, kind string, timeout time.Duration) 
 }
 
 // Spawn spawns a remote actor of a given type at a given address
-func (r *Remote) Spawn(address, kind string, timeout time.Duration) (*ActorPidResponse, error) {
+func (r *Remote) Spawn(address, kind string, timeout time.Duration) (*remoteProto.ActorPidResponse, error) {
 	return r.SpawnNamed(address, "", kind, timeout)
 }
 
 // SpawnNamed spawns a named remote actor of a given type at a given address
-func (r *Remote) SpawnNamed(address, name, kind string, timeout time.Duration) (*ActorPidResponse, error) {
+func (r *Remote) SpawnNamed(address, name, kind string, timeout time.Duration) (*remoteProto.ActorPidResponse, error) {
 	res, err := r.SpawnFuture(address, name, kind, timeout).Result()
 	if err != nil {
 		return nil, err
 	}
 	switch msg := res.(type) {
-	case *ActorPidResponse:
+	case *remoteProto.ActorPidResponse:
 		return msg, nil
 	default:
 		return nil, errors.New("remote: Unknown response when remote activating")
@@ -90,12 +91,12 @@ func (a *activator) Receive(context actor.Context) {
 		plog.Info("Started Activator")
 	case *Ping:
 		context.Respond(&Pong{})
-	case *ActorPidRequest:
+	case *remoteProto.ActorPidRequest:
 		props, exist := a.remote.kinds[msg.Kind]
 
 		// if props not exist, return error and panic
 		if !exist {
-			response := &ActorPidResponse{
+			response := &remoteProto.ActorPidResponse{
 				StatusCode: ResponseStatusCodeERROR.ToInt32(),
 			}
 			context.Respond(response)
@@ -112,16 +113,16 @@ func (a *activator) Receive(context actor.Context) {
 		pid, err := context.SpawnNamed(props, "Remote$"+name)
 
 		if err == nil {
-			response := &ActorPidResponse{Pid: pid}
+			response := &remoteProto.ActorPidResponse{Pid: pid}
 			context.Respond(response)
 		} else if err == actor.ErrNameExists {
-			response := &ActorPidResponse{
+			response := &remoteProto.ActorPidResponse{
 				Pid:        pid,
 				StatusCode: ResponseStatusCodePROCESSNAMEALREADYEXIST.ToInt32(),
 			}
 			context.Respond(response)
 		} else if aErr, ok := err.(*ActivatorError); ok {
-			response := &ActorPidResponse{
+			response := &remoteProto.ActorPidResponse{
 				StatusCode: aErr.Code,
 			}
 			context.Respond(response)
@@ -129,7 +130,7 @@ func (a *activator) Receive(context actor.Context) {
 				panic(err)
 			}
 		} else {
-			response := &ActorPidResponse{
+			response := &remoteProto.ActorPidResponse{
 				StatusCode: ResponseStatusCodeERROR.ToInt32(),
 			}
 			context.Respond(response)

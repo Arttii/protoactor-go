@@ -1,24 +1,24 @@
 package remote
 
 import (
-	"fmt"
-	"io/ioutil"
 	"net"
+	"net/http"
 	"time"
 
-	"github.com/asynkron/protoactor-go/extensions"
-
 	"github.com/asynkron/protoactor-go/actor"
+	"github.com/asynkron/protoactor-go/extensions"
 	"github.com/asynkron/protoactor-go/log"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
+	"github.com/asynkron/protoactor-go/remote/gen/genconnect"
+	"golang.org/x/net/context"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 var extensionId = extensions.NextExtensionID()
 
 type Remote struct {
 	actorSystem  *actor.ActorSystem
-	s            *grpc.Server
+	s            *http.Server
 	edpReader    *endpointReader
 	edpManager   *endpointManager
 	config       *Config
@@ -58,17 +58,17 @@ func (r *Remote) BlockList() *BlockList { return r.blocklist }
 
 // Start the remote server
 func (r *Remote) Start() {
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, ioutil.Discard, ioutil.Discard))
-	lis, err := net.Listen("tcp", r.config.Address())
+	l, err := net.Listen("tcp", r.config.Address())
+
 	if err != nil {
-		panic(fmt.Errorf("failed to listen: %v", err))
+		panic(err)
 	}
 
 	var address string
 	if r.config.AdvertisedHost != "" {
 		address = r.config.AdvertisedHost
 	} else {
-		address = lis.Addr().String()
+		address = l.Addr().String()
 	}
 
 	r.actorSystem.ProcessRegistry.RegisterAddressResolver(r.remoteHandler)
@@ -78,11 +78,30 @@ func (r *Remote) Start() {
 	r.edpManager = newEndpointManager(r)
 	r.edpManager.start()
 
-	r.s = grpc.NewServer(r.config.ServerOptions...)
 	r.edpReader = newEndpointReader(r)
-	RegisterRemotingServer(r.s, r.edpReader)
+
+	mux := http.NewServeMux()
+
+	path, handler := genconnect.NewRemotingHandler(r.edpReader, r.config.ConnectHandlerOptions...)
+
+	mux.Handle(path, handler)
+
 	plog.Info("Starting Proto.Actor server", log.String("address", address))
-	go r.s.Serve(lis)
+
+	srv := &http.Server{
+		Addr: address,
+		Handler: h2c.NewHandler(
+			r.config.ConnectCorsOptions.Handler(mux),
+			&http2.Server{},
+		),
+		TLSConfig:         r.config.ConnectClientTLSConfig,
+		ReadHeaderTimeout: r.config.ConnectServerHTTPOptions.ReadHeaderTimeout,
+		ReadTimeout:       r.config.ConnectServerHTTPOptions.ReadTimeout,
+		WriteTimeout:      r.config.ConnectServerHTTPOptions.WriteTimeout,
+		MaxHeaderBytes:    r.config.ConnectServerHTTPOptions.MaxHeaderBytes,
+	}
+	r.s = srv
+	go srv.Serve(l)
 }
 
 func (r *Remote) Shutdown(graceful bool) {
@@ -96,7 +115,7 @@ func (r *Remote) Shutdown(graceful bool) {
 		// TODO: grpc not stopping
 		c := make(chan bool, 1)
 		go func() {
-			r.s.GracefulStop()
+			r.s.Shutdown(context.Background())
 			c <- true
 		}()
 
@@ -104,11 +123,11 @@ func (r *Remote) Shutdown(graceful bool) {
 		case <-c:
 			plog.Info("Stopped Proto.Actor server")
 		case <-time.After(time.Second * 10):
-			r.s.Stop()
+			r.s.Close()
 			plog.Info("Stopped Proto.Actor server", log.String("err", "timeout"))
 		}
 	} else {
-		r.s.Stop()
+		r.s.Close()
 		plog.Info("Killed Proto.Actor server")
 	}
 }

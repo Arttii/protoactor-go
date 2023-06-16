@@ -1,0 +1,2 @@
+export GOBIN=$PWD/bin/
+export PATH=$GOBIN/:common/node_modules/.bin/:$PATH

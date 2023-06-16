@@ -21,8 +21,14 @@ func (state *echoActor) Receive(context actor.Context) {
 		state.sender = msg.Sender
 		context.Respond(&messages.Start{})
 	case *messages.Ping:
+
 		context.Send(state.sender, &messages.Pong{})
+	case *messages.Pong:
+
+		context.Send(state.sender, &messages.Pong{})
+
 	}
+
 }
 
 func main() {
@@ -31,7 +37,7 @@ func main() {
 
 	props := actor.
 		PropsFromProducer(func() actor.Actor { return &echoActor{} },
-			actor.WithMailbox(actor.Bounded(1000000)))
+			actor.WithMailbox(actor.Bounded(100000)))
 
 	system := actor.NewActorSystem()
 	r := remote.NewRemote(system, remote.Configure("127.0.0.1", 12000 /*, remote.WithCallOptions(grpc.UseCompressor(gzip.Name))*/))
