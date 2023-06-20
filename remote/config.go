@@ -15,6 +15,7 @@ func defaultConfig() *Config {
 	return &Config{
 		AdvertisedHost: "",
 
+		EndpointWriterBatchSize:  1000,
 		EndpointManagerBatchSize: 1000,
 		EndpointWriterQueueSize:  1000000,
 		EndpointManagerQueueSize: 1000000,
