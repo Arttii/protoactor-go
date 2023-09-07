@@ -2,6 +2,7 @@ package opentracing
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/asynkron/protoactor-go/log"
@@ -25,7 +26,8 @@ func ReceiverMiddleware() actor.ReceiverMiddleware {
 			case *actor.Started:
 				parentSpan := getAndClearParentSpan(c.Self())
 				if parentSpan != nil {
-					span = opentracing.StartSpan(fmt.Sprintf("%T/%T", c.Actor(), envelope.Message), opentracing.ChildOf(parentSpan.Context()))
+					name := strings.ReplaceAll(fmt.Sprintf("%T/%T", c.Actor(), envelope.Message), "*", "")
+					span = opentracing.StartSpan(name, opentracing.ChildOf(parentSpan.Context()))
 					logger.Debug("INBOUND Found parent span", log.Stringer("PID", c.Self()), log.TypeOf("ActorType", c.Actor()), log.TypeOf("MessageType", envelope.Message))
 				} else {
 					logger.Debug("INBOUND No parent span", log.Stringer("PID", c.Self()), log.TypeOf("ActorType", c.Actor()), log.TypeOf("MessageType", envelope.Message))
@@ -36,9 +38,11 @@ func ReceiverMiddleware() actor.ReceiverMiddleware {
 					parentSpan = getStoppingSpan(c.Parent())
 				}
 				if parentSpan != nil {
-					span = opentracing.StartSpan(fmt.Sprintf("%T/stopping", c.Actor()), opentracing.ChildOf(parentSpan.Context()))
+					name := strings.ReplaceAll(fmt.Sprintf("%T/stopping", c.Actor()), "*", "")
+					span = opentracing.StartSpan(name, opentracing.ChildOf(parentSpan.Context()))
 				} else {
-					span = opentracing.StartSpan(fmt.Sprintf("%T/stopping", c.Actor()))
+					name := strings.ReplaceAll(fmt.Sprintf("%T/stopping", c.Actor()), "*", "")
+					span = opentracing.StartSpan(name)
 				}
 				setStoppingSpan(c.Self(), span)
 				span.SetTag("ActorPID", c.Self())
@@ -58,17 +62,25 @@ func ReceiverMiddleware() actor.ReceiverMiddleware {
 			}
 			if span == nil && spanContext == nil {
 				logger.Debug("INBOUND No spanContext. Starting new span", log.Stringer("PID", c.Self()), log.TypeOf("ActorType", c.Actor()), log.TypeOf("MessageType", envelope.Message))
-				span = opentracing.StartSpan(fmt.Sprintf("%T/%T", c.Actor(), envelope.Message))
+				name := strings.ReplaceAll(fmt.Sprintf("%T/%T", c.Actor(), envelope.Message), "*", "")
+
+				span = opentracing.StartSpan(name)
 			}
 			if span == nil {
 				logger.Debug("INBOUND Starting span from parent", log.Stringer("PID", c.Self()), log.TypeOf("ActorType", c.Actor()), log.TypeOf("MessageType", envelope.Message))
-				span = opentracing.StartSpan(fmt.Sprintf("%T/%T", c.Actor(), envelope.Message), opentracing.ChildOf(spanContext))
+				name := strings.ReplaceAll(fmt.Sprintf("%T/%T", c.Actor(), envelope.Message), "*", "")
+				span = opentracing.StartSpan(name, opentracing.ChildOf(spanContext))
 			}
 
 			setActiveSpan(c.Self(), span)
 			span.SetTag("ActorPID", c.Self())
 			span.SetTag("ActorType", fmt.Sprintf("%T", c.Actor()))
 			span.SetTag("MessageType", fmt.Sprintf("%T", envelope.Message))
+
+			span.SetTag("span.kind", "server")
+
+			span.SetTag("server", c.Self().String())
+			span.SetTag("client", envelope.Sender.String())
 
 			defer func() {
 				logger.Debug("INBOUND Finishing span", log.Stringer("PID", c.Self()), log.TypeOf("ActorType", c.Actor()), log.TypeOf("MessageType", envelope.Message))

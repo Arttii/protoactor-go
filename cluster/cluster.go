@@ -232,7 +232,14 @@ func (c *Cluster) Call(name string, kind string, msg interface{}, opts ...GrainC
 		timeout := callConfig.Timeout
 		_resp, err := _context.RequestFuture(pid, msg, timeout).Result()
 		if err != nil {
-			plog.Error("cluster.RequestFuture failed", log.Error(err), log.PID("pid", pid))
+			msgType := ""
+
+			msgG, ok := msg.(*GrainRequest)
+			if ok {
+				msgType = msgG.MessageTypeName
+			}
+
+			plog.Error("cluster.RequestFuture failed", log.Error(err), log.PID("pid", pid), log.String("kind", kind), log.String("messageType", msgType))
 			lastError = err
 
 			switch err {

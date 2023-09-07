@@ -17,6 +17,11 @@ func SenderMiddleware() actor.SenderMiddleware {
 				return
 			}
 
+			span.SetTag("span.kind", "client")
+
+			span.SetTag("client", c.Self().String())
+			span.SetTag("server", target.String())
+
 			err := opentracing.GlobalTracer().Inject(span.Context(), opentracing.TextMap, opentracing.TextMapWriter(&messageEnvelopeWriter{MessageEnvelope: envelope}))
 			if err != nil {
 				logger.Debug("OUTBOUND Error injecting", log.Stringer("PID", c.Self()), log.TypeOf("ActorType", c.Actor()), log.TypeOf("MessageType", envelope.Message))
