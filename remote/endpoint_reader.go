@@ -4,10 +4,10 @@ import (
 	"errors"
 	"io"
 
+	"connectrpc.com/connect"
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/asynkron/protoactor-go/log"
 	remoteProto "github.com/asynkron/protoactor-go/remote/gen"
-	"github.com/bufbuild/connect-go"
 	"golang.org/x/net/context"
 	"google.golang.org/protobuf/proto"
 )

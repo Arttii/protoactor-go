@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/asynkron/protoactor-go/log"
 	remoteProto "github.com/asynkron/protoactor-go/remote/gen"
 	remoteConnect "github.com/asynkron/protoactor-go/remote/gen/genconnect"
-	"github.com/bufbuild/connect-go"
 	"golang.org/x/net/context"
 	"golang.org/x/net/http2"
 	"google.golang.org/protobuf/proto"

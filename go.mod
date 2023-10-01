@@ -25,7 +25,7 @@ require (
 )
 
 require (
-	github.com/bufbuild/connect-go v1.8.0
+	connectrpc.com/connect v1.11.1
 	github.com/go-zookeeper/zk v1.0.3
 	github.com/golang/mock v1.5.0
 	github.com/labstack/echo v3.3.10+incompatible

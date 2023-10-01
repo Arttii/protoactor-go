@@ -5,10 +5,10 @@
 package genconnect
 
 import (
+	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
 	gen "github.com/asynkron/protoactor-go/remote/gen"
-	connect_go "github.com/bufbuild/connect-go"
 	http "net/http"
 	strings "strings"
 )
@@ -18,7 +18,7 @@ import (
 // generated with a version of connect newer than the one compiled into your binary. You can fix the
 // problem by either regenerating this code with an older version of connect or updating the connect
 // version compiled into your binary.
-const _ = connect_go.IsAtLeastVersion0_1_0
+const _ = connect.IsAtLeastVersion0_1_0
 
 const (
 	// RemotingName is the fully-qualified name of the Remoting service.
@@ -44,9 +44,9 @@ const (
 
 // RemotingClient is a client for the remote.Remoting service.
 type RemotingClient interface {
-	Receive(context.Context) *connect_go.BidiStreamForClient[gen.RemoteMessage, gen.RemoteMessage]
-	ListProcesses(context.Context, *connect_go.Request[gen.ListProcessesRequest]) (*connect_go.Response[gen.ListProcessesResponse], error)
-	GetProcessDiagnostics(context.Context, *connect_go.Request[gen.GetProcessDiagnosticsRequest]) (*connect_go.Response[gen.GetProcessDiagnosticsResponse], error)
+	Receive(context.Context) *connect.BidiStreamForClient[gen.RemoteMessage, gen.RemoteMessage]
+	ListProcesses(context.Context, *connect.Request[gen.ListProcessesRequest]) (*connect.Response[gen.ListProcessesResponse], error)
+	GetProcessDiagnostics(context.Context, *connect.Request[gen.GetProcessDiagnosticsRequest]) (*connect.Response[gen.GetProcessDiagnosticsResponse], error)
 }
 
 // NewRemotingClient constructs a client for the remote.Remoting service. By default, it uses the
@@ -56,20 +56,20 @@ type RemotingClient interface {
 //
 // The URL supplied here should be the base URL for the Connect or gRPC server (for example,
 // http://api.acme.com or https://acme.com/grpc).
-func NewRemotingClient(httpClient connect_go.HTTPClient, baseURL string, opts ...connect_go.ClientOption) RemotingClient {
+func NewRemotingClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) RemotingClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &remotingClient{
-		receive: connect_go.NewClient[gen.RemoteMessage, gen.RemoteMessage](
+		receive: connect.NewClient[gen.RemoteMessage, gen.RemoteMessage](
 			httpClient,
 			baseURL+RemotingReceiveProcedure,
 			opts...,
 		),
-		listProcesses: connect_go.NewClient[gen.ListProcessesRequest, gen.ListProcessesResponse](
+		listProcesses: connect.NewClient[gen.ListProcessesRequest, gen.ListProcessesResponse](
 			httpClient,
 			baseURL+RemotingListProcessesProcedure,
 			opts...,
 		),
-		getProcessDiagnostics: connect_go.NewClient[gen.GetProcessDiagnosticsRequest, gen.GetProcessDiagnosticsResponse](
+		getProcessDiagnostics: connect.NewClient[gen.GetProcessDiagnosticsRequest, gen.GetProcessDiagnosticsResponse](
 			httpClient,
 			baseURL+RemotingGetProcessDiagnosticsProcedure,
 			opts...,
@@ -79,31 +79,31 @@ func NewRemotingClient(httpClient connect_go.HTTPClient, baseURL string, opts ..
 
 // remotingClient implements RemotingClient.
 type remotingClient struct {
-	receive               *connect_go.Client[gen.RemoteMessage, gen.RemoteMessage]
-	listProcesses         *connect_go.Client[gen.ListProcessesRequest, gen.ListProcessesResponse]
-	getProcessDiagnostics *connect_go.Client[gen.GetProcessDiagnosticsRequest, gen.GetProcessDiagnosticsResponse]
+	receive               *connect.Client[gen.RemoteMessage, gen.RemoteMessage]
+	listProcesses         *connect.Client[gen.ListProcessesRequest, gen.ListProcessesResponse]
+	getProcessDiagnostics *connect.Client[gen.GetProcessDiagnosticsRequest, gen.GetProcessDiagnosticsResponse]
 }
 
 // Receive calls remote.Remoting.Receive.
-func (c *remotingClient) Receive(ctx context.Context) *connect_go.BidiStreamForClient[gen.RemoteMessage, gen.RemoteMessage] {
+func (c *remotingClient) Receive(ctx context.Context) *connect.BidiStreamForClient[gen.RemoteMessage, gen.RemoteMessage] {
 	return c.receive.CallBidiStream(ctx)
 }
 
 // ListProcesses calls remote.Remoting.ListProcesses.
-func (c *remotingClient) ListProcesses(ctx context.Context, req *connect_go.Request[gen.ListProcessesRequest]) (*connect_go.Response[gen.ListProcessesResponse], error) {
+func (c *remotingClient) ListProcesses(ctx context.Context, req *connect.Request[gen.ListProcessesRequest]) (*connect.Response[gen.ListProcessesResponse], error) {
 	return c.listProcesses.CallUnary(ctx, req)
 }
 
 // GetProcessDiagnostics calls remote.Remoting.GetProcessDiagnostics.
-func (c *remotingClient) GetProcessDiagnostics(ctx context.Context, req *connect_go.Request[gen.GetProcessDiagnosticsRequest]) (*connect_go.Response[gen.GetProcessDiagnosticsResponse], error) {
+func (c *remotingClient) GetProcessDiagnostics(ctx context.Context, req *connect.Request[gen.GetProcessDiagnosticsRequest]) (*connect.Response[gen.GetProcessDiagnosticsResponse], error) {
 	return c.getProcessDiagnostics.CallUnary(ctx, req)
 }
 
 // RemotingHandler is an implementation of the remote.Remoting service.
 type RemotingHandler interface {
-	Receive(context.Context, *connect_go.BidiStream[gen.RemoteMessage, gen.RemoteMessage]) error
-	ListProcesses(context.Context, *connect_go.Request[gen.ListProcessesRequest]) (*connect_go.Response[gen.ListProcessesResponse], error)
-	GetProcessDiagnostics(context.Context, *connect_go.Request[gen.GetProcessDiagnosticsRequest]) (*connect_go.Response[gen.GetProcessDiagnosticsResponse], error)
+	Receive(context.Context, *connect.BidiStream[gen.RemoteMessage, gen.RemoteMessage]) error
+	ListProcesses(context.Context, *connect.Request[gen.ListProcessesRequest]) (*connect.Response[gen.ListProcessesResponse], error)
+	GetProcessDiagnostics(context.Context, *connect.Request[gen.GetProcessDiagnosticsRequest]) (*connect.Response[gen.GetProcessDiagnosticsResponse], error)
 }
 
 // NewRemotingHandler builds an HTTP handler from the service implementation. It returns the path on
@@ -111,37 +111,47 @@ type RemotingHandler interface {
 //
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
-func NewRemotingHandler(svc RemotingHandler, opts ...connect_go.HandlerOption) (string, http.Handler) {
-	mux := http.NewServeMux()
-	mux.Handle(RemotingReceiveProcedure, connect_go.NewBidiStreamHandler(
+func NewRemotingHandler(svc RemotingHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	remotingReceiveHandler := connect.NewBidiStreamHandler(
 		RemotingReceiveProcedure,
 		svc.Receive,
 		opts...,
-	))
-	mux.Handle(RemotingListProcessesProcedure, connect_go.NewUnaryHandler(
+	)
+	remotingListProcessesHandler := connect.NewUnaryHandler(
 		RemotingListProcessesProcedure,
 		svc.ListProcesses,
 		opts...,
-	))
-	mux.Handle(RemotingGetProcessDiagnosticsProcedure, connect_go.NewUnaryHandler(
+	)
+	remotingGetProcessDiagnosticsHandler := connect.NewUnaryHandler(
 		RemotingGetProcessDiagnosticsProcedure,
 		svc.GetProcessDiagnostics,
 		opts...,
-	))
-	return "/remote.Remoting/", mux
+	)
+	return "/remote.Remoting/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case RemotingReceiveProcedure:
+			remotingReceiveHandler.ServeHTTP(w, r)
+		case RemotingListProcessesProcedure:
+			remotingListProcessesHandler.ServeHTTP(w, r)
+		case RemotingGetProcessDiagnosticsProcedure:
+			remotingGetProcessDiagnosticsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
 }
 
 // UnimplementedRemotingHandler returns CodeUnimplemented from all methods.
 type UnimplementedRemotingHandler struct{}
 
-func (UnimplementedRemotingHandler) Receive(context.Context, *connect_go.BidiStream[gen.RemoteMessage, gen.RemoteMessage]) error {
-	return connect_go.NewError(connect_go.CodeUnimplemented, errors.New("remote.Remoting.Receive is not implemented"))
+func (UnimplementedRemotingHandler) Receive(context.Context, *connect.BidiStream[gen.RemoteMessage, gen.RemoteMessage]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("remote.Remoting.Receive is not implemented"))
 }
 
-func (UnimplementedRemotingHandler) ListProcesses(context.Context, *connect_go.Request[gen.ListProcessesRequest]) (*connect_go.Response[gen.ListProcessesResponse], error) {
-	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("remote.Remoting.ListProcesses is not implemented"))
+func (UnimplementedRemotingHandler) ListProcesses(context.Context, *connect.Request[gen.ListProcessesRequest]) (*connect.Response[gen.ListProcessesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("remote.Remoting.ListProcesses is not implemented"))
 }
 
-func (UnimplementedRemotingHandler) GetProcessDiagnostics(context.Context, *connect_go.Request[gen.GetProcessDiagnosticsRequest]) (*connect_go.Response[gen.GetProcessDiagnosticsResponse], error) {
-	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("remote.Remoting.GetProcessDiagnostics is not implemented"))
+func (UnimplementedRemotingHandler) GetProcessDiagnostics(context.Context, *connect.Request[gen.GetProcessDiagnosticsRequest]) (*connect.Response[gen.GetProcessDiagnosticsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("remote.Remoting.GetProcessDiagnostics is not implemented"))
 }

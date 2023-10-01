@@ -2,7 +2,7 @@ version: v1
 managed:
   enabled: true
 plugins:
-  - name: go
+  - plugin: buf.build/protocolbuffers/go:v1.31.0
     out: ./
     opt: paths=source_relative
 #      b

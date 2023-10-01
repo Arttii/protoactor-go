@@ -2,11 +2,11 @@ version: v1
 managed:
   enabled: true
 plugins:
-  - name: go
+  - plugin: buf.build/protocolbuffers/go:v1.31.0
     out: gen
     opt: paths=source_relative
 
-  - name: connect-go
+  - plugin: buf.build/connectrpc/go:v1.11.1
     out: gen
     opt:
       - paths=source_relative
